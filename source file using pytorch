@@ -1,0 +1,67 @@
+import pandas as pd
+import torch
+from transformers import BertTokenizer, BertForSequenceClassification, AdamW, get_linear_schedule_with_warmup
+from torch.utils.data import TensorDataset, DataLoader, RandomSampler
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+# Load the data from the CSV file
+try:
+    df = pd.read_csv('bjp_tweets.csv')
+except FileNotFoundError:
+    print('The specified file could not be found.')
+    exit()
+
+# Check if the required column is present in the DataFrame
+if 'text' not in df.columns:
+    print('The specified column could not be found in the DataFrame.')
+    exit()
+
+# Drop rows with missing values
+df.dropna(subset=['text'], inplace=True)
+
+# Tokenize the input text
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case=True)
+tokenized_texts = [tokenizer.tokenize(text) for text in df['text']]
+
+# Truncate the tokenized texts to a maximum length of 512
+max_seq_length = 512
+tokenized_texts = [tokenizer.convert_tokens_to_ids(text)[:max_seq_length] for text in tokenized_texts]
+
+tokenized_texts = pad_sequences(tokenized_texts, maxlen=59, dtype='long', truncating='post', padding='post')
+input_ids = torch.tensor(tokenized_texts)
+
+
+attention_masks = torch.tensor([[int(i > 0) for i in ii] for ii in input_ids])
+
+# Load the BERT model
+model = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=3)
+
+# Set the device to GPU, if available
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = model.to(device)
+
+# Create a PyTorch dataset and data loader
+dataset = TensorDataset(input_ids, attention_masks)
+dataloader = DataLoader(dataset, batch_size=8)
+
+# Evaluate the model on the test data
+model.eval()
+predictions = []
+with torch.no_grad():
+    for batch in dataloader:
+        batch = tuple(t.to(device) for t in batch)
+        inputs = {'input_ids': batch[0], 'attention_mask': batch[1]}
+        outputs = model(**inputs)
+        logits = outputs[0]
+        pred = torch.argmax(logits, dim=1).flatten()
+        predictions.extend(pred.cpu().detach().numpy())
+
+# Map the predictions to sentiment labels
+sentiment_map = {0: 'negative', 1: 'neutral', 2: 'positive'}
+sentiments = [sentiment_map[prediction] for prediction in predictions]
+
+# Add the predicted sentiments to the DataFrame
+df['sentiment'] = sentiments
+
+# Print the number of tweets in each sentiment category
+print(df['sentiment'].value_counts())
