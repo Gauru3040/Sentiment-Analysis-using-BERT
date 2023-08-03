@@ -1,0 +1,34 @@
+import pandas as pd
+from textblob import TextBlob
+
+# Load the dataset
+try:
+    df = pd.read_csv('congress_tweets.csv', usecols=['text'])
+    df['text'] = df['text'].apply(lambda x: str(x))
+except FileNotFoundError:
+    print("Error: File not found!")
+    exit()
+except pd.errors.EmptyDataError:
+    print("Error: The dataset is empty!")
+    exit()
+
+# Define a function for sentiment analysis using TextBlob
+def get_sentiment(tweet):
+    analysis = TextBlob(tweet)
+    sentiment = analysis.sentiment.polarity
+    if sentiment > 0:
+        return 'positive'
+    elif sentiment == 0:
+        return 'neutral'
+    else:
+        return 'negative'
+
+# Apply the sentiment analysis function to the dataset
+try:
+    df['sentiment'] = df['text'].apply(get_sentiment)
+except KeyError:
+    print("Error: The 'text' column does not exist in the dataset!")
+    exit()
+
+# Print the sentiment distribution
+print(df['sentiment'].value_counts())
